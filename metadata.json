@@ -1,0 +1,6 @@
+{
+  "name": "RefReels",
+  "description": "Betting referral reels feed to discover, copy, scan QR codes, and share sports betting bonuses and referral codes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
