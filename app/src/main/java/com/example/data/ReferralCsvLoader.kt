@@ -107,7 +107,9 @@ object ReferralCsvLoader {
             gradientStart = defaultGradStart,
             gradientEnd = defaultGradEnd,
             accentColor = defaultAccent,
-            region = row.value("region").ifBlank { "Global" }
+            region = row.value("region").ifBlank { "Global" },
+            termsHighlight = row.value("termshighlight"),
+            linkInstructions = row.value("linkinstructions")
         )
     }
 

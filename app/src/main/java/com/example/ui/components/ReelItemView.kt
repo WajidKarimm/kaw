@@ -430,6 +430,17 @@ fun ReelItemView(
                 overflow = TextOverflow.Ellipsis
             )
 
+            if (app.termsHighlight.isNotBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = app.termsHighlight,
+                    color = Color(0x99FFFFFF),
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
             Spacer(modifier = Modifier.height(8.dp))
 
             // Tags row

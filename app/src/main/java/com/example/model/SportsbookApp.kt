@@ -16,5 +16,7 @@ data class SportsbookApp(
     val gradientStart: Long,
     val gradientEnd: Long,
     val accentColor: Long,
-    val region: String = "US"
+    val region: String = "US",
+    val termsHighlight: String = "",
+    val linkInstructions: String = ""
 )

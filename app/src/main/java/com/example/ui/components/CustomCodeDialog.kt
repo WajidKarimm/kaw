@@ -113,6 +113,16 @@ fun CustomCodeDialog(
                     fontSize = 10.sp
                 )
 
+                if (app.linkInstructions.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "📍 Where to find your link: ${app.linkInstructions}",
+                        color = GoldPrimary,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(20.dp))
 
                 Row(
