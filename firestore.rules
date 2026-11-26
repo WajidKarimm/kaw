@@ -1,0 +1,233 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: deny all access by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email == 'karimwajid0101@gmail.com' &&
+        request.auth.token.email_verified == true;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string &&
+        id.size() >= 1 &&
+        id.size() <= 128 &&
+        id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidTidKey(tid) {
+      return tid is string &&
+        tid.size() >= 6 &&
+        tid.size() <= 24 &&
+        tid.matches('^[A-Z0-9\\-]+$');
+    }
+
+    function isValidStatus(status) {
+      return status is string &&
+        status in ['PENDING_VERIFICATION', 'APPROVED', 'REJECTED'];
+    }
+
+    function isValidAppConfig(data) {
+      return data.keys().hasAll(['accountTitle', 'accountNumber', 'feePkr', 'updatedBy', 'updatedAt']) &&
+        data.keys().hasOnly(['accountTitle', 'accountNumber', 'feePkr', 'updatedBy', 'updatedAt']) &&
+        data.accountTitle is string && data.accountTitle.size() >= 2 && data.accountTitle.size() <= 60 &&
+        data.accountNumber is string && data.accountNumber.matches('^03[0-9]{9}$') &&
+        data.feePkr is int && data.feePkr == 100 &&
+        data.updatedBy is string && data.updatedBy == request.auth.uid &&
+        data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidAppShareConfig(data) {
+      return data.keys().hasAll(['downloadUrl', 'updatedBy', 'updatedAt']) &&
+        data.keys().hasOnly(['downloadUrl', 'shareMessage', 'updatedBy', 'updatedAt']) &&
+        data.downloadUrl is string && data.downloadUrl.size() >= 10 && data.downloadUrl.size() <= 500 &&
+        data.downloadUrl.matches('^https?://[^\\s]+$') &&
+        (!('shareMessage' in data) || (data.shareMessage is string && data.shareMessage.size() <= 200)) &&
+        data.updatedBy is string && data.updatedBy == request.auth.uid &&
+        data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidViralSubmission(data) {
+      return data.keys().hasAll([
+          'userId', 'authorName', 'title', 'referralLink',
+          'bonusOffer', 'amountPkr', 'status', 'viralShares',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'authorName', 'title', 'referralLink',
+          'promoCode', 'bonusOffer', 'description', 'videoUrl',
+          'amountPkr', 'status', 'adminNote', 'viralShares',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+        data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 60 &&
+        data.title is string && data.title.size() >= 2 && data.title.size() <= 60 &&
+        data.referralLink is string && data.referralLink.size() >= 10 && data.referralLink.size() <= 500 &&
+        data.referralLink.matches('^https?://[^\\s]+$') &&
+        (!('promoCode' in data) || (data.promoCode is string && data.promoCode.size() <= 40)) &&
+        data.bonusOffer is string && data.bonusOffer.size() >= 1 && data.bonusOffer.size() <= 50 &&
+        (!('description' in data) || (data.description is string && data.description.size() <= 300)) &&
+        (!('videoUrl' in data) || (data.videoUrl is string && data.videoUrl.size() <= 500 && (data.videoUrl == '' || data.videoUrl.matches('^https?://[^\\s]+$')))) &&
+        data.amountPkr is int && data.amountPkr == 100 &&
+        isValidStatus(data.status) &&
+        (!('adminNote' in data) || (data.adminNote is string && data.adminNote.size() <= 200)) &&
+        data.viralShares is int && data.viralShares >= 0 &&
+        data.createdAt is timestamp && data.createdAt <= request.time &&
+        data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidDepositProof(data) {
+      return data.keys().hasAll([
+          'userId', 'submissionId', 'easypaisaSenderPhone',
+          'easypaisaTid', 'amountPkr', 'status', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'submissionId', 'easypaisaSenderPhone',
+          'easypaisaTid', 'amountPkr', 'status', 'createdAt', 'updatedAt'
+        ]) &&
+        data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+        isValidId(data.submissionId) &&
+        data.easypaisaSenderPhone is string && data.easypaisaSenderPhone.matches('^03[0-9]{9}$') &&
+        isValidTidKey(data.easypaisaTid) &&
+        data.amountPkr is int && data.amountPkr == 100 &&
+        isValidStatus(data.status) &&
+        data.createdAt is timestamp && data.createdAt <= request.time &&
+        data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidTidRegistry(data) {
+      return data.keys().hasAll(['userId', 'submissionId', 'createdAt']) &&
+        data.keys().hasOnly(['userId', 'submissionId', 'createdAt']) &&
+        data.userId is string && data.userId == request.auth.uid &&
+        isValidId(data.submissionId) &&
+        data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    // 1. Admin App Configuration (/app_config/easypaisa and /app_config/app_share)
+    match /app_config/{configId} {
+      allow get: if isSignedIn() && isValidId(configId);
+      allow list: if false;
+      allow create, update: if isAdmin() &&
+        isValidId(configId) && (
+          (configId == 'easypaisa' && isValidAppConfig(incoming())) ||
+          (configId == 'app_share' && isValidAppShareConfig(incoming()))
+        );
+      allow delete: if false;
+    }
+
+    // 2. Public Viral Submissions & Admin Moderation Queue
+    match /viral_submissions/{submissionId} {
+      allow get: if isSignedIn() && isValidId(submissionId) && (
+        existing().status == 'APPROVED' ||
+        existing().userId == request.auth.uid ||
+        isAdmin()
+      );
+
+      allow list: if isSignedIn() && (
+        existing().status == 'APPROVED' ||
+        existing().userId == request.auth.uid ||
+        isAdmin()
+      );
+
+      allow create: if isSignedIn() &&
+        isValidId(submissionId) &&
+        isValidViralSubmission(incoming()) &&
+        incoming().userId == request.auth.uid &&
+        incoming().status == 'PENDING_VERIFICATION' &&
+        incoming().viralShares == 0 &&
+        !('adminNote' in incoming()) &&
+        existsAfter(/databases/$(database)/documents/deposit_proofs/$(submissionId));
+
+      allow update: if isSignedIn() &&
+        isValidId(submissionId) &&
+        isValidViralSubmission(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().amountPkr == existing().amountPkr && (
+          // Action 1: Admin approves or rejects submission
+          (
+            isAdmin() &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'adminNote', 'updatedAt'])
+          ) ||
+          // Action 2: Signed-in user increments viral share count on an approved reel
+          (
+            existing().status == 'APPROVED' &&
+            incoming().status == 'APPROVED' &&
+            incoming().viralShares == existing().viralShares + 1 &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['viralShares', 'updatedAt'])
+          )
+        );
+
+      allow delete: if isSignedIn() && isValidId(submissionId) && (
+        existing().userId == request.auth.uid || isAdmin()
+      );
+    }
+
+    // 3. Private Easypaisa Deposit Proofs (Owner & Admin Only - PII Isolated)
+    match /deposit_proofs/{submissionId} {
+      allow get: if isSignedIn() && isValidId(submissionId) && (
+        existing().userId == request.auth.uid || isAdmin()
+      );
+
+      allow list: if isSignedIn() && (
+        existing().userId == request.auth.uid || isAdmin()
+      );
+
+      allow create: if isSignedIn() &&
+        isValidId(submissionId) &&
+        isValidDepositProof(incoming()) &&
+        incoming().userId == request.auth.uid &&
+        incoming().submissionId == submissionId &&
+        incoming().status == 'PENDING_VERIFICATION' &&
+        existsAfter(/databases/$(database)/documents/viral_submissions/$(submissionId)) &&
+        existsAfter(/databases/$(database)/documents/tid_registry/$(incoming().easypaisaTid));
+
+      allow update: if isAdmin() &&
+        isValidId(submissionId) &&
+        isValidDepositProof(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().submissionId == existing().submissionId &&
+        incoming().easypaisaSenderPhone == existing().easypaisaSenderPhone &&
+        incoming().easypaisaTid == existing().easypaisaTid &&
+        incoming().amountPkr == existing().amountPkr &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isValidId(submissionId) && (
+        existing().userId == request.auth.uid || isAdmin()
+      );
+    }
+
+    // 4. Atomic TID Deduplication Registry
+    match /tid_registry/{tidKey} {
+      allow get: if isSignedIn() && isValidTidKey(tidKey) && (
+        existing().userId == request.auth.uid || isAdmin()
+      );
+      allow list: if false;
+      allow create: if isSignedIn() &&
+        isValidTidKey(tidKey) &&
+        isValidTidRegistry(incoming()) &&
+        existsAfter(/databases/$(database)/documents/deposit_proofs/$(incoming().submissionId));
+      allow update: if false;
+      allow delete: if isAdmin() && isValidTidKey(tidKey);
+    }
+  }
+}

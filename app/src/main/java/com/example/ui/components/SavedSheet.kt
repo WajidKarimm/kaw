@@ -53,6 +53,7 @@ import com.example.ui.theme.TextPrimary
 @Composable
 fun SavedSheet(
     savedApps: List<SportsbookApp>,
+    getEffectiveLink: (SportsbookApp) -> String,
     onSelectApp: (SportsbookApp) -> Unit,
     onCopy: (SportsbookApp) -> Unit,
     onQr: (SportsbookApp) -> Unit,
@@ -224,7 +225,7 @@ fun SavedSheet(
 
                         // Monospace link
                         Text(
-                            text = app.defaultRef,
+                            text = getEffectiveLink(app),
                             color = TextMuted,
                             fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace,

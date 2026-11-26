@@ -1,0 +1,104 @@
+{
+  "entities": {
+    "AppConfig": {
+      "title": "AppConfig",
+      "description": "Admin-configured Easypaisa receiving account and boost fee configuration.",
+      "type": "object",
+      "properties": {
+        "accountTitle": { "type": "string", "description": "Easypaisa account holder name." },
+        "accountNumber": { "type": "string", "description": "Easypaisa 11-digit mobile number (03XXXXXXXXX)." },
+        "feePkr": { "type": "integer", "description": "Required deposit fee in PKR (100)." },
+        "updatedBy": { "type": "string", "description": "UID of admin who updated config." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last update." }
+      },
+      "required": ["accountTitle", "accountNumber", "feePkr", "updatedBy", "updatedAt"]
+    },
+    "AppShareConfig": {
+      "title": "AppShareConfig",
+      "description": "Admin-configured public app download URL and share message for QR/group sharing.",
+      "type": "object",
+      "properties": {
+        "downloadUrl": { "type": "string", "description": "HTTPS/HTTP APK or store download URL." },
+        "shareMessage": { "type": "string", "description": "Optional invite text shown when sharing." },
+        "updatedBy": { "type": "string", "description": "UID of admin who updated config." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last update." }
+      },
+      "required": ["downloadUrl", "updatedBy", "updatedAt"]
+    },
+    "ViralSubmission": {
+      "title": "ViralSubmission",
+      "description": "Public viral referral submission and admin moderation status (PII excluded).",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner Firebase Auth UID." },
+        "authorName": { "type": "string", "description": "Display name of submitter." },
+        "title": { "type": "string", "description": "Offer or app name." },
+        "referralLink": { "type": "string", "description": "HTTPS/HTTP referral link." },
+        "promoCode": { "type": "string", "description": "Optional promo or invite code." },
+        "bonusOffer": { "type": "string", "description": "Short bonus label." },
+        "description": { "type": "string", "description": "Short promotional description." },
+        "videoUrl": { "type": "string", "description": "Optional HTTPS promo video URL." },
+        "amountPkr": { "type": "integer", "description": "Deposit fee in PKR (100)." },
+        "status": {
+          "type": "string",
+          "enum": ["PENDING_VERIFICATION", "APPROVED", "REJECTED"],
+          "description": "Admin approval workflow status."
+        },
+        "adminNote": { "type": "string", "description": "Optional moderation note from admin." },
+        "viralShares": { "type": "integer", "description": "Number of times link was shared or copied." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server creation timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server update timestamp." }
+      },
+      "required": ["userId", "authorName", "title", "referralLink", "bonusOffer", "amountPkr", "status", "viralShares", "createdAt", "updatedAt"]
+    },
+    "DepositProof": {
+      "title": "DepositProof",
+      "description": "Private 100 PKR Easypaisa payment verification proof accessible only to owner and admin.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Submitter Firebase Auth UID." },
+        "submissionId": { "type": "string", "description": "Matching viral_submissions document ID." },
+        "easypaisaSenderPhone": { "type": "string", "description": "Sender Easypaisa mobile number (03XXXXXXXXX)." },
+        "easypaisaTid": { "type": "string", "description": "Unique Easypaisa Transaction ID." },
+        "amountPkr": { "type": "integer", "description": "Deposit amount in PKR (100)." },
+        "status": {
+          "type": "string",
+          "enum": ["PENDING_VERIFICATION", "APPROVED", "REJECTED"],
+          "description": "Verification status synced with submission."
+        },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server creation timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server update timestamp." }
+      },
+      "required": ["userId", "submissionId", "easypaisaSenderPhone", "easypaisaTid", "amountPkr", "status", "createdAt", "updatedAt"]
+    },
+    "TidRegistry": {
+      "title": "TidRegistry",
+      "description": "Deduplication registry keyed by uppercase Easypaisa TID to block reuse.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Submitter UID." },
+        "submissionId": { "type": "string", "description": "Associated submission ID." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server creation timestamp." }
+      },
+      "required": ["userId", "submissionId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/app_config/{configId}": {
+      "schema": { "$ref": "#/entities/AppConfig" },
+      "description": "Stores receiving Easypaisa account configuration (easypaisa)."
+    },
+    "/viral_submissions/{submissionId}": {
+      "schema": { "$ref": "#/entities/ViralSubmission" },
+      "description": "Viral referral link submissions and moderation statuses."
+    },
+    "/deposit_proofs/{submissionId}": {
+      "schema": { "$ref": "#/entities/DepositProof" },
+      "description": "Private Easypaisa sender phone and TID verification records."
+    },
+    "/tid_registry/{tidKey}": {
+      "schema": { "$ref": "#/entities/TidRegistry" },
+      "description": "Atomic TID uniqueness lock per Easypaisa transaction."
+    }
+  }
+}

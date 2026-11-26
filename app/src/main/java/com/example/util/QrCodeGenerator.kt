@@ -5,12 +5,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 
 /**
- * Self-contained, pure Kotlin QR Code matrix and Bitmap generator.
- * Encodes text/URLs into standard QR Codes (Versions 1-6, Byte mode, Error Correction Level M/L).
+ * Pure Kotlin QR Code matrix and Bitmap generator.
+ * Implements ISO/IEC 18004 Versions 1–9 (Byte mode, Error Correction Level M)
+ * with exact multi-block Reed-Solomon interleaving and version information bits for V7–V9.
  */
 object QrCodeGenerator {
 
-    // Reed-Solomon GF(256) tables
     private val exp = IntArray(512)
     private val log = IntArray(256)
 
@@ -31,7 +31,6 @@ object QrCodeGenerator {
         return exp[log[x] + log[y]]
     }
 
-    // RS generator polynomial
     private fun rsPoly(degree: Int): IntArray {
         var poly = intArrayOf(1)
         for (i in 0 until degree) {
@@ -59,38 +58,51 @@ object QrCodeGenerator {
                 }
             }
         }
-        val res = ByteArray(ecCount)
-        for (i in 0 until ecCount) {
-            res[i] = remainder[i].toByte()
-        }
-        return res
+        return ByteArray(ecCount) { i -> remainder[i].toByte() }
     }
 
-    // Version definitions (version, total data bytes, ec bytes, alignment positions)
+    private data class RsBlockGroup(
+        val blockCount: Int,
+        val dataBytesPerBlock: Int,
+        val ecBytesPerBlock: Int
+    )
+
     private data class QrVersion(
         val version: Int,
-        val totalBytes: Int,
-        val dataBytes: Int,
-        val ecBytes: Int,
-        val alignPos: IntArray
+        val groups: List<RsBlockGroup>,
+        val alignPos: IntArray,
+        val remainderBits: Int = 0,
+        val versionInfoBits: Int = 0
     ) {
         val size: Int get() = 17 + 4 * version
+        val totalDataBytes: Int get() = groups.sumOf { it.blockCount * it.dataBytesPerBlock }
     }
 
-    // Standard Level-M versions for byte data
+    // ISO/IEC 18004 Error Correction Level M (Versions 1 to 9, supports up to ~179 UTF-8 bytes)
     private val VERSIONS = listOf(
-        QrVersion(1, 26, 16, 10, intArrayOf()),
-        QrVersion(2, 44, 28, 16, intArrayOf(6, 18)),
-        QrVersion(3, 70, 44, 26, intArrayOf(6, 22)),
-        QrVersion(4, 100, 64, 36, intArrayOf(6, 26)),
-        QrVersion(5, 134, 86, 48, intArrayOf(6, 30)),
-        QrVersion(6, 172, 108, 64, intArrayOf(6, 34))
+        QrVersion(1, listOf(RsBlockGroup(1, 16, 10)), intArrayOf()),
+        QrVersion(2, listOf(RsBlockGroup(1, 28, 16)), intArrayOf(6, 18), remainderBits = 7),
+        QrVersion(3, listOf(RsBlockGroup(1, 44, 26)), intArrayOf(6, 22), remainderBits = 7),
+        QrVersion(4, listOf(RsBlockGroup(2, 32, 18)), intArrayOf(6, 26), remainderBits = 7),
+        QrVersion(5, listOf(RsBlockGroup(2, 43, 24)), intArrayOf(6, 30), remainderBits = 7),
+        QrVersion(6, listOf(RsBlockGroup(4, 27, 16)), intArrayOf(6, 34), remainderBits = 7),
+        QrVersion(7, listOf(RsBlockGroup(4, 31, 18)), intArrayOf(6, 22, 38), versionInfoBits = 0x07C94),
+        QrVersion(8, listOf(RsBlockGroup(2, 38, 22), RsBlockGroup(2, 39, 22)), intArrayOf(6, 24, 42), versionInfoBits = 0x085BC),
+        QrVersion(9, listOf(RsBlockGroup(3, 36, 22), RsBlockGroup(2, 37, 22)), intArrayOf(6, 26, 46), versionInfoBits = 0x09A99)
     )
 
     fun encode(text: String): Array<BooleanArray> {
-        val textBytes = text.toByteArray(Charsets.UTF_8)
-        // Select smallest version that fits: 4-bit mode + 8/16-bit count + data
-        val ver = VERSIONS.firstOrNull { it.dataBytes >= textBytes.size + 3 } ?: VERSIONS.last()
+        val rawBytes = text.toByteArray(Charsets.UTF_8)
+        val maxSupported = VERSIONS.last().totalDataBytes - 2
+        val textBytes = if (rawBytes.size > maxSupported) {
+            rawBytes.copyOf(maxSupported)
+        } else {
+            rawBytes
+        }
+
+        // Byte mode header for V1-V9: 4-bit mode + 8-bit char count = 12 bits (~2 bytes overhead)
+        val ver = VERSIONS.firstOrNull { it.totalDataBytes * 8 >= 4 + 8 + textBytes.size * 8 }
+            ?: VERSIONS.last()
         val size = ver.size
 
         // Build data bitstream
@@ -100,25 +112,47 @@ object QrCodeGenerator {
         for (b in textBytes) {
             bits.append(b.toInt() and 0xFF, 8)
         }
-        // Terminator
-        val maxDataBits = ver.dataBytes * 8
+        val maxDataBits = ver.totalDataBytes * 8
         val termLen = minOf(4, maxDataBits - bits.bitLength)
         bits.append(0, termLen)
-        // Byte padding
         val pad = (8 - (bits.bitLength % 8)) % 8
         bits.append(0, pad)
-        // Pad bytes 0xEC and 0x11
+
         var toggle = 0xEC
         while (bits.bitLength < maxDataBits) {
             bits.append(toggle, 8)
             toggle = if (toggle == 0xEC) 0x11 else 0xEC
         }
 
-        val dataBytes = bits.toByteArray()
-        val ecBytes = rsEncode(dataBytes, ver.ecBytes)
-        val allBytes = ByteArray(ver.totalBytes)
-        System.arraycopy(dataBytes, 0, allBytes, 0, dataBytes.size)
-        System.arraycopy(ecBytes, 0, allBytes, dataBytes.size, ecBytes.size)
+        val rawData = bits.toByteArray()
+
+        // Split into RS blocks & compute EC blocks
+        val dataBlocks = ArrayList<ByteArray>()
+        val ecBlocks = ArrayList<ByteArray>()
+        var offset = 0
+        for (group in ver.groups) {
+            for (b in 0 until group.blockCount) {
+                val block = rawData.copyOfRange(offset, offset + group.dataBytesPerBlock)
+                offset += group.dataBytesPerBlock
+                dataBlocks.add(block)
+                ecBlocks.add(rsEncode(block, group.ecBytesPerBlock))
+            }
+        }
+
+        // Interleave data codewords, then EC codewords
+        val interleaved = ArrayList<Byte>()
+        val maxDataLen = dataBlocks.maxOf { it.size }
+        for (i in 0 until maxDataLen) {
+            for (block in dataBlocks) {
+                if (i < block.size) interleaved.add(block[i])
+            }
+        }
+        val maxEcLen = ecBlocks.maxOf { it.size }
+        for (i in 0 until maxEcLen) {
+            for (block in ecBlocks) {
+                if (i < block.size) interleaved.add(block[i])
+            }
+        }
 
         // Matrix initialization
         val matrix = Array(size) { BooleanArray(size) }
@@ -137,8 +171,8 @@ object QrCodeGenerator {
                     val mc = left + c
                     if (mr in 0 until size && mc in 0 until size) {
                         val isBlack = (r in 0..6 && (c == 0 || c == 6)) ||
-                                (c in 0..6 && (r == 0 || r == 6)) ||
-                                (r in 2..4 && c in 2..4)
+                            (c in 0..6 && (r == 0 || r == 6)) ||
+                            (r in 2..4 && c in 2..4)
                         setModule(mr, mc, isBlack)
                     }
                 }
@@ -175,21 +209,37 @@ object QrCodeGenerator {
         for (i in 0..8) {
             reserved[8][i] = true
             reserved[i][8] = true
+        }
+        for (i in 0..7) {
             reserved[8][size - 1 - i] = true
             reserved[size - 1 - i][8] = true
         }
 
-        // 6. Place data bits using Mask 0: (row + col) % 2 == 0
+        // 6. Version information for Version >= 7
+        if (ver.version >= 7) {
+            for (i in 0 until 18) {
+                val bit = ((ver.versionInfoBits ushr i) and 1) != 0
+                val row = i / 3
+                val col = size - 11 + (i % 3)
+                setModule(row, col, bit)
+                setModule(col, row, bit)
+            }
+        }
+
+        // 7. Place interleaved data + remainder bits using Mask 0: (row + col) % 2 == 0
         val allBits = BitBuffer()
-        for (b in allBytes) {
+        for (b in interleaved) {
             allBits.append(b.toInt() and 0xFF, 8)
+        }
+        repeat(ver.remainderBits) {
+            allBits.append(0, 1)
         }
 
         var bitIdx = 0
         var col = size - 1
         var upward = true
         while (col > 0) {
-            if (col == 6) col-- // Skip vertical timing column
+            if (col == 6) col--
             val rows = if (upward) (size - 1 downTo 0) else (0 until size)
             for (row in rows) {
                 for (dc in 0..1) {
@@ -205,12 +255,10 @@ object QrCodeGenerator {
             col -= 2
         }
 
-        // 7. Format information for Level M, Mask 0: 0x5412 xor 0x5412 = 0b101010000010010
-        // EC Level M = 00, Mask 0 = 000 -> 00000 -> BCH format bits = 0x5412 xor 0x5412 = 0
-        val formatBits = 0x5412 xor 0x0000 // 15 bits: 0b101010000010010
+        // 8. Format information for Level M (00), Mask 0 (000) -> 0x5412
+        val formatBits = 0x5412
         for (i in 0 until 15) {
             val bit = ((formatBits ushr (14 - i)) and 1) != 0
-            // Top-left
             when {
                 i < 6 -> matrix[8][i] = bit
                 i == 6 -> matrix[8][7] = bit
@@ -218,8 +266,7 @@ object QrCodeGenerator {
                 i == 8 -> matrix[7][8] = bit
                 else -> matrix[14 - i][8] = bit
             }
-            // Split copies
-            if (i < 8) {
+            if (i < 7) {
                 matrix[size - 1 - i][8] = bit
             } else {
                 matrix[8][size - 15 + i] = bit
@@ -237,7 +284,7 @@ object QrCodeGenerator {
     ): Bitmap {
         val matrix = encode(text)
         val matrixSize = matrix.size
-        val border = 2
+        val border = 4
         val fullSize = matrixSize + border * 2
         val scale = maxOf(1, pixelSize / fullSize)
         val bmpWidth = fullSize * scale

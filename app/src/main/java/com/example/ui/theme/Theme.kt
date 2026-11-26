@@ -1,17 +1,21 @@
 package com.example.ui.theme
 
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 
 private val DarkColorScheme = darkColorScheme(
     primary = GoldPrimary,
     onPrimary = Color(0xFF0A0F16),
     primaryContainer = GoldDark,
-    onPrimaryContainer = Color(0xFF05070A),
+    onPrimaryContainer = BgDeep,
     secondary = AccentCyan,
-    onSecondary = Color(0xFF05070A),
+    onSecondary = BgDeep,
+    tertiary = AccentGreen,
+    onTertiary = BgDeep,
     background = BgDark,
     onBackground = TextPrimary,
     surface = PanelDark,
@@ -28,7 +32,10 @@ fun RefReelsTheme(
 ) {
     MaterialTheme(
         colorScheme = DarkColorScheme,
-        typography = Typography,
-        content = content
-    )
+        typography = Typography
+    ) {
+        CompositionLocalProvider(LocalContentColor provides TextPrimary) {
+            content()
+        }
+    }
 }

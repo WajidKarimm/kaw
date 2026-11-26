@@ -2,15 +2,31 @@ package com.example.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.example.data.local.RefReelsDatabase
+import com.example.data.local.ViralReelEntity
+import com.example.data.remote.ViralSubmissionDoc
 import com.example.model.SportsbookApp
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+
+data class EasypaisaMerchantConfig(
+    val accountTitle: String = "",
+    val accountNumber: String = ""
+) {
+    val isConfigured: Boolean
+        get() = accountTitle.isNotBlank() && accountNumber.isNotBlank()
+}
 
 class SportsbookRepository(private val context: Context) {
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences("refreels_prefs", Context.MODE_PRIVATE)
+
+    private val viralReelDao by lazy {
+        RefReelsDatabase.getInstance(context).viralReelDao()
+    }
 
     private val _savedIds = MutableStateFlow<Set<String>>(emptySet())
     val savedIds: StateFlow<Set<String>> = _savedIds.asStateFlow()
@@ -18,9 +34,59 @@ class SportsbookRepository(private val context: Context) {
     private val _customLinks = MutableStateFlow<Map<String, String>>(emptyMap())
     val customLinks: StateFlow<Map<String, String>> = _customLinks.asStateFlow()
 
+    private val _localVideoMap = MutableStateFlow<Map<String, String>>(emptyMap())
+    val localVideoMap: StateFlow<Map<String, String>> = _localVideoMap.asStateFlow()
+
+    private val _localAppShareUrl = MutableStateFlow(loadLocalAppShareUrl())
+    val localAppShareUrl: StateFlow<String> = _localAppShareUrl.asStateFlow()
+
+    private val _merchantConfig = MutableStateFlow(loadMerchantConfig())
+    val merchantConfig: StateFlow<EasypaisaMerchantConfig> = _merchantConfig.asStateFlow()
+
+    val viralReelsFlow: Flow<List<ViralReelEntity>>
+        get() = viralReelDao.observeAllViralReels()
+
     init {
         loadSaved()
         loadCustomLinks()
+        loadLocalVideos()
+    }
+
+    fun defaultAppShareUrl(): String =
+        "https://play.google.com/store/apps/details?id=${context.packageName}"
+
+    private fun loadLocalAppShareUrl(): String {
+        return prefs.getString("app_share_download_url", "")?.trim().orEmpty()
+    }
+
+    fun saveLocalAppShareUrl(url: String) {
+        val clean = url.trim()
+        if (clean.isBlank()) {
+            prefs.edit().remove("app_share_download_url").apply()
+            _localAppShareUrl.value = ""
+        } else {
+            prefs.edit().putString("app_share_download_url", clean).apply()
+            _localAppShareUrl.value = clean
+        }
+    }
+
+    private fun loadMerchantConfig(): EasypaisaMerchantConfig {
+        val title = prefs.getString("easypaisa_merchant_title", "") ?: ""
+        val number = prefs.getString("easypaisa_merchant_number", "") ?: ""
+        return EasypaisaMerchantConfig(accountTitle = title, accountNumber = number)
+    }
+
+    fun saveMerchantConfig(accountTitle: String, accountNumber: String) {
+        val cleanTitle = accountTitle.trim()
+        val cleanNumber = ViralMediaStorage.normalizePakistaniPhone(accountNumber)
+        prefs.edit()
+            .putString("easypaisa_merchant_title", cleanTitle)
+            .putString("easypaisa_merchant_number", cleanNumber)
+            .apply()
+        _merchantConfig.value = EasypaisaMerchantConfig(
+            accountTitle = cleanTitle,
+            accountNumber = cleanNumber
+        )
     }
 
     private fun loadSaved() {
@@ -38,6 +104,37 @@ class SportsbookRepository(private val context: Context) {
             }
         }
         _customLinks.value = map
+    }
+
+    private fun loadLocalVideos() {
+        val all = prefs.all
+        val map = mutableMapOf<String, String>()
+        for ((k, v) in all) {
+            if (k.startsWith("local_video_") && v is String) {
+                val id = k.removePrefix("local_video_")
+                map[id] = v
+            }
+        }
+        _localVideoMap.value = map
+    }
+
+    fun saveLocalVideoMapping(submissionId: String, localPath: String) {
+        if (submissionId.isBlank() || localPath.isBlank()) return
+        prefs.edit().putString("local_video_$submissionId", localPath).apply()
+        _localVideoMap.value = _localVideoMap.value + (submissionId to localPath)
+    }
+
+    fun getLocalVideoMapping(submissionId: String): String {
+        return _localVideoMap.value[submissionId].orEmpty()
+    }
+
+    fun removeLocalVideoMapping(submissionId: String) {
+        val existingPath = _localVideoMap.value[submissionId]
+        if (!existingPath.isNullOrBlank()) {
+            ViralMediaStorage.deleteStoredFileIfOwned(context, existingPath)
+        }
+        prefs.edit().remove("local_video_$submissionId").apply()
+        _localVideoMap.value = _localVideoMap.value - submissionId
     }
 
     fun toggleSave(appId: String): Boolean {
@@ -82,252 +179,155 @@ class SportsbookRepository(private val context: Context) {
         return app.defaultRef
     }
 
+    suspend fun isTransactionIdUsed(tid: String): Boolean {
+        return viralReelDao.countByTransactionId(tid.trim()) > 0
+    }
+
+    suspend fun insertViralReel(entity: ViralReelEntity) {
+        viralReelDao.insertViralReel(entity)
+    }
+
+    suspend fun incrementViralShares(appId: String) {
+        viralReelDao.incrementViralShares(appId)
+    }
+
+    suspend fun deleteViralReel(entity: ViralReelEntity) {
+        ViralMediaStorage.deleteStoredFileIfOwned(context, entity.videoPath)
+        ViralMediaStorage.deleteStoredFileIfOwned(context, entity.receiptImagePath)
+        viralReelDao.deleteViralReel(entity.id)
+    }
+
     fun getInitialApps(): List<SportsbookApp> {
         val fromCsv = ReferralCsvLoader.load(context)
         if (fromCsv.isNotEmpty()) return fromCsv
         return getFallbackApps()
     }
 
-    private fun getFallbackApps(): List<SportsbookApp> = listOf(
-        SportsbookApp(
-            id = "draftkings",
-            name = "DraftKings",
-            iconType = "football",
-            payout = "Up to $100",
-            payoutVal = 100,
-            badge = "🏆 Most Popular",
-            rating = "4.8",
-            reviews = "1.4M",
-            defaultRef = "https://sportsbook.draftkings.com/refer-a-friend",
-            promoCode = "Personal Link",
-            description = "Matched bonus bet up to $100 when a brand-new friend registers via your link, verifies ID, and deposits $25+.",
-            termsHighlight = "Min $25 deposit · Max 5 referrals ($500) · 7-day bonus expiry",
-            linkInstructions = "DraftKings App → Menu / Rewards Center → Promos → Refer-A-Friend",
-            tags = listOf("sportsbook", "dfs", "high payout", "us"),
-            gradientStart = 0xFF059669,
-            gradientEnd = 0xFF04331F,
-            accentColor = 0xFF6EE7B7,
-            region = "US"
-        ),
-        SportsbookApp(
-            id = "fanduel",
-            name = "FanDuel",
-            iconType = "trophy",
-            payout = "$50–$75",
-            payoutVal = 75,
-            badge = "🎯 Fan Favourite",
-            rating = "4.8",
-            reviews = "1.3M",
-            defaultRef = "https://www.fanduel.com/refer",
-            promoCode = "Personal Link",
-            description = "Earn $50–$75 in Bonus Bets when a new customer joins with your link, deposits $5–$10+, and settles a qualifying wager.",
-            termsHighlight = "Min $10 bet · Max 5–10 per 30 days · 7-day bonus expiry",
-            linkInstructions = "FanDuel App → Rewards Hub / Earn $$$ icon → Refer-A-Friend",
-            tags = listOf("sportsbook", "dfs", "us", "sgp"),
-            gradientStart = 0xFF2563EB,
-            gradientEnd = 0xFF0A1C4D,
-            accentColor = 0xFF93C5FD,
-            region = "US"
-        ),
-        SportsbookApp(
-            id = "betmgm",
-            name = "BetMGM",
-            iconType = "crown",
-            payout = "$50–$100",
-            payoutVal = 100,
-            badge = "👑 High Cap",
-            rating = "4.6",
-            reviews = "920K",
-            defaultRef = "https://sports.betmgm.com/en/sports/refer-a-friend",
-            promoCode = "Personal Link",
-            description = "Receive $100 Sports Bonus or $50 Casino Bonus per friend. Both accounts must register in the same state jurisdiction.",
-            termsHighlight = "Same-state rule · Max 20 referrals/mo · Verified ID required",
-            linkInstructions = "BetMGM App → Promotions → Refer A Friend → Copy Invite Link",
-            tags = listOf("sportsbook", "casino", "high payout", "us"),
-            gradientStart = 0xFFB45309,
-            gradientEnd = 0xFF3A1D02,
-            accentColor = 0xFFFCD34D,
-            region = "US"
-        ),
-        SportsbookApp(
-            id = "betrivers",
-            name = "BetRivers",
-            iconType = "trending",
-            payout = "$50–$500",
-            payoutVal = 500,
-            badge = "🎡 Bonus Wheel",
-            rating = "4.5",
-            reviews = "240K",
-            defaultRef = "https://www.betrivers.com",
-            promoCode = "Personal Link",
-            description = "Both you and your friend earn a Wheel Spin worth $50–$500 in Bonus Money (1x playthrough) after wagering $50 within 30 days.",
-            termsHighlight = "$50 real-money wager · 1x playthrough · Max 3 referrals",
-            linkInstructions = "BetRivers App → My Account → Promotions → Refer-A-Friend",
-            tags = listOf("sportsbook", "high payout", "casino", "us"),
-            gradientStart = 0xFF0284C7,
-            gradientEnd = 0xFF082F49,
-            accentColor = 0xFF7DD3FC,
-            region = "US"
-        ),
-        SportsbookApp(
-            id = "fanatics",
-            name = "Fanatics",
-            iconType = "trophy",
-            payout = "$30–$100",
-            payoutVal = 100,
-            badge = "🧢 FanCash",
-            rating = "4.7",
-            reviews = "410K",
-            defaultRef = "https://sportsbook.fanatics.com",
-            promoCode = "Personal Link",
-            description = "Includes former PointsBet US users. Earn $30–$100 in FanCash (convertible to bonus bets or gear) after a $10–$20 cash wager.",
-            termsHighlight = "$10–$20 cash wager · Max 5 referrals ($500) · Link required",
-            linkInstructions = "Fanatics Sportsbook App → Account Menu → Refer-A-Friend",
-            tags = listOf("sportsbook", "rewards", "high payout", "us"),
-            gradientStart = 0xFF7C3AED,
-            gradientEnd = 0xFF2A1065,
-            accentColor = 0xFFC4B5FD,
-            region = "US"
-        ),
-        SportsbookApp(
-            id = "hardrock",
-            name = "Hard Rock Bet",
-            iconType = "fire",
-            payout = "Up to $50",
-            payoutVal = 50,
-            badge = "🎸 20x Limit",
-            rating = "4.8",
-            reviews = "380K",
-            defaultRef = "https://www.hardrock.bet",
-            promoCode = "Personal Link",
-            description = "Both you and your friend get a matching Bonus Bet up to $50 after they deposit and place a $10+ bet at -250 odds or longer.",
-            termsHighlight = "Min $10 bet (-250+ odds) · Max 20 referrals ($1,000)",
-            linkInstructions = "Hard Rock Bet App → Rewards → Invite and Earn",
-            tags = listOf("sportsbook", "rewards", "us"),
-            gradientStart = 0xFF9333EA,
-            gradientEnd = 0xFF3B0764,
-            accentColor = 0xFFD8B4FE,
-            region = "US"
-        ),
-        SportsbookApp(
-            id = "caesars",
-            name = "Caesars",
-            iconType = "landmark",
-            payout = "$25+ Bets",
-            payoutVal = 25,
-            badge = "🏛️ Rewards",
-            rating = "4.6",
-            reviews = "710K",
-            defaultRef = "https://www.caesars.com/sportsbook-and-casino",
-            promoCode = "Personal Link",
-            description = "Receive a bundle of bonus bets (e.g., 5 bonus bets totaling $25+) when your friend deposits and wagers $25+ cumulatively.",
-            termsHighlight = "Min $25 deposit & wager · Caesars Rewards account required",
-            linkInstructions = "Caesars App → My Promos → Refer-A-Friend",
-            tags = listOf("sportsbook", "rewards", "us"),
-            gradientStart = 0xFF1D4ED8,
-            gradientEnd = 0xFF0A1A45,
-            accentColor = 0xFF93C5FD,
-            region = "US"
-        ),
-        SportsbookApp(
-            id = "stake",
-            name = "Stake",
-            iconType = "crypto",
-            payout = "10% Lifetime",
-            payoutVal = 120,
-            badge = "⚡ Crypto Affiliate",
-            rating = "4.6",
-            reviews = "1.5M",
-            defaultRef = "https://stake.com/affiliate/overview",
-            promoCode = "Affiliate Code",
-            description = "Ongoing affiliate revshare rather than a one-time cap: earn 10% of the house edge on sports (3% edge) and casino wagers.",
-            termsHighlight = "Lifetime house-edge commission · Crypto instant payout",
-            linkInstructions = "Stake → Profile / Affiliate Tab → Create Campaign Link",
-            tags = listOf("sportsbook", "crypto", "global", "high payout"),
-            gradientStart = 0xFF15803D,
-            gradientEnd = 0xFF04260F,
-            accentColor = 0xFF4ADE80,
-            region = "Global"
-        ),
-        SportsbookApp(
-            id = "bet365",
-            name = "Bet365",
-            iconType = "soccer",
-            payout = "$50 (CA) / Offers",
-            payoutVal = 50,
-            badge = "🌍 Global #1",
-            rating = "4.7",
-            reviews = "3.6M",
-            defaultRef = "https://www.bet365.com",
-            promoCode = "TAN365",
-            description = "World's largest live betting book. Direct Refer-A-Friend ($50/friend, $500 cap) runs in select markets like Canada; US uses welcome offers.",
-            termsHighlight = "Region-dependent · $500 annual cap in active referral markets",
-            linkInstructions = "Bet365 App (Eligible Regions) → Account Menu → Offers → Refer-A-Friend",
-            tags = listOf("sportsbook", "global", "live betting"),
-            gradientStart = 0xFF65A30D,
-            gradientEnd = 0xFF1E2E05,
-            accentColor = 0xFFBEF264,
-            region = "Global"
-        ),
-        SportsbookApp(
-            id = "underdog",
-            name = "Underdog",
-            iconType = "target",
-            payout = "$10–$25",
-            payoutVal = 25,
-            badge = "🐶 Pick'em DFS",
-            rating = "4.8",
-            reviews = "480K",
-            defaultRef = "https://underdogfantasy.com",
-            promoCode = "Personal Link",
-            description = "Earn $10–$25 in bonus funds plus contest leaderboard perks when your friend deposits $10+ and enters their first fantasy contest.",
-            termsHighlight = "Min $10 deposit & entry · Available in most US states",
-            linkInstructions = "Underdog App → Account / Profile Tab → Invite Friends",
-            tags = listOf("dfs", "us", "pickem"),
-            gradientStart = 0xFFD97706,
-            gradientEnd = 0xFF451A03,
-            accentColor = 0xFFFDE68A,
-            region = "US"
-        ),
-        SportsbookApp(
-            id = "prizepicks",
-            name = "PrizePicks",
-            iconType = "diamond",
-            payout = "Bonus Lineups",
-            payoutVal = 50,
-            badge = "💎 Daily Fantasy",
-            rating = "4.8",
-            reviews = "620K",
-            defaultRef = "https://www.prizepicks.com",
-            promoCode = "Personal Code",
-            description = "Earn Bonus Balance / Bonus Lineups when a friend signs up with your personal invite code and completes their minimum first deposit.",
-            termsHighlight = "New users only · Min first deposit required · Flex/Power",
-            linkInstructions = "PrizePicks App → Profile / Promos → Refer a Friend",
-            tags = listOf("dfs", "us", "pickem"),
-            gradientStart = 0xFF6D28D9,
-            gradientEnd = 0xFF1E1B4B,
-            accentColor = 0xFFA78BFA,
-            region = "US"
-        ),
-        SportsbookApp(
-            id = "betway",
-            name = "Betway",
-            iconType = "dice",
-            payout = "Free Bets",
-            payoutVal = 40,
-            badge = "🎲 UK / CA / EU",
-            rating = "4.4",
-            reviews = "540K",
-            defaultRef = "https://betway.com",
-            promoCode = "Personal Link",
-            description = "Region-specific Refer-a-Friend rewards in UK, Ontario, and European markets. Unlocks Free Bet credits after qualifying wager settles.",
-            termsHighlight = "UK / Ontario / EU availability · Qualifying min-odds bet",
-            linkInstructions = "Betway Account Dashboard → Promotions → Refer a Friend",
-            tags = listOf("sportsbook", "casino", "global"),
-            gradientStart = 0xFF0F766E,
-            gradientEnd = 0xFF04211F,
-            accentColor = 0xFF6EE7B7,
-            region = "Global"
+    private fun getFallbackApps(): List<SportsbookApp> = defaultCatalog()
+
+    companion object {
+        fun ViralSubmissionDoc.toSportsbookApp(localVideoOverride: String = ""): SportsbookApp {
+            val codeTag = promoCode.ifBlank { "Viral" }
+            val creator = authorName.ifBlank { "Community" }
+            return SportsbookApp(
+                id = id,
+                name = title,
+                iconType = "fire",
+                payout = bonusOffer.ifBlank { "Viral Offer" },
+                payoutVal = amountPkr.toInt(),
+                badge = "🔥 Viral · Verified",
+                rating = "5.0",
+                reviews = if (viralShares == 1L) "1 share" else "$viralShares shares",
+                defaultRef = referralLink,
+                promoCode = codeTag,
+                description = description.ifBlank {
+                    "Admin-verified viral referral link shared by $creator. Tap Copy or Share to boost reach."
+                },
+                termsHighlight = "100 PKR Verified · Shared by $creator",
+                linkInstructions = "Promoted viral referral link ($referralLink)",
+                tags = listOf("viral", "verified", "easypaisa", "community"),
+                gradientStart = 0xFF059669,
+                gradientEnd = 0xFF04260F,
+                accentColor = 0xFF34D399,
+                region = "Global",
+                videoPath = videoUrl.ifBlank { localVideoOverride },
+                isUserViral = true,
+                viralShares = viralShares.toInt(),
+                easypaisaTid = ""
+            )
+        }
+
+        fun ViralReelEntity.toSportsbookApp(): SportsbookApp {
+            val codeTag = promoCode.ifBlank { "Viral" }
+            return SportsbookApp(
+                id = id,
+                name = title,
+                iconType = "fire",
+                payout = bonusOffer.ifBlank { "Viral Offer" },
+                payoutVal = amountPkr,
+                badge = "🔥 Viral · 100 PKR Verified",
+                rating = "5.0",
+                reviews = if (viralShares == 1) "1 share" else "$viralShares shares",
+                defaultRef = referralLink,
+                promoCode = codeTag,
+                description = description.ifBlank {
+                    "Community promoted viral referral link with promo video. Tap Copy or Share to boost reach."
+                },
+                termsHighlight = "Easypaisa TID: $easypaisaTid · $amountPkr PKR Boost",
+                linkInstructions = "Promoted viral referral link ($referralLink)",
+                tags = listOf("viral", "video", "easypaisa", "community"),
+                gradientStart = 0xFF059669,
+                gradientEnd = 0xFF04260F,
+                accentColor = 0xFF34D399,
+                region = "Global",
+                videoPath = videoPath,
+                isUserViral = true,
+                viralShares = viralShares,
+                easypaisaTid = easypaisaTid
+            )
+        }
+
+        fun defaultCatalog(): List<SportsbookApp> = listOf(
+            SportsbookApp(
+                id = "j10app",
+                name = "J10 App",
+                iconType = "crown",
+                payout = "Invite Bonus",
+                payoutVal = 50,
+                badge = "🎁 Active Link",
+                rating = "4.8",
+                reviews = "Verified Link",
+                defaultRef = "https://j10app.win/?dl=abxtwr",
+                promoCode = "abxtwr",
+                description = "Join J10 App directly through this verified referral download link with invite code abxtwr.",
+                termsHighlight = "Code abxtwr embedded · Tap Copy or QR to share",
+                linkInstructions = "Open https://j10app.win/?dl=abxtwr or scan QR code",
+                tags = listOf("j10app", "bonus", "global", "referral"),
+                gradientStart = 0xFF7C3AED,
+                gradientEnd = 0xFF2A1065,
+                accentColor = 0xFFC4B5FD,
+                region = "Global"
+            ),
+            SportsbookApp(
+                id = "win786",
+                name = "Win786",
+                iconType = "trophy",
+                payout = "Invite Bonus",
+                payoutVal = 51,
+                badge = "⚡ Active Link",
+                rating = "4.8",
+                reviews = "Verified Link",
+                defaultRef = "https://win786.win/?id=989008314",
+                promoCode = "989008314",
+                description = "Register on Win786 using this verified referral link with invite ID 989008314.",
+                termsHighlight = "Referral ID 989008314 embedded · Instant QR & share",
+                linkInstructions = "Open https://win786.win/?id=989008314 or scan QR code",
+                tags = listOf("win786", "bonus", "global", "referral"),
+                gradientStart = 0xFF059669,
+                gradientEnd = 0xFF04331F,
+                accentColor = 0xFF6EE7B7,
+                region = "Global"
+            ),
+            SportsbookApp(
+                id = "4pk365",
+                name = "4PK365",
+                iconType = "diamond",
+                payout = "Invite Bonus",
+                payoutVal = 52,
+                badge = "💎 Active Link",
+                rating = "4.8",
+                reviews = "Verified Link",
+                defaultRef = "https://4pk365.com/?dl=9gz5zj",
+                promoCode = "9gz5zj",
+                description = "Access 4PK365 directly through this verified referral download link with invite code 9gz5zj.",
+                termsHighlight = "Code 9gz5zj embedded · Tap Copy or QR to share",
+                linkInstructions = "Open https://4pk365.com/?dl=9gz5zj or scan QR code",
+                tags = listOf("4pk365", "bonus", "global", "referral"),
+                gradientStart = 0xFFB45309,
+                gradientEnd = 0xFF3A1D02,
+                accentColor = 0xFFFCD34D,
+                region = "Global"
+            )
         )
-    )
+    }
 }

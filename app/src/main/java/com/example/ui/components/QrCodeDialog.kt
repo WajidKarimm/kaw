@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -135,6 +136,7 @@ fun QrCodeDialog(
                     Image(
                         bitmap = qrBitmap.asImageBitmap(),
                         contentDescription = "Referral QR code for ${app.name}",
+                        filterQuality = FilterQuality.None,
                         modifier = Modifier.size(182.dp)
                     )
                 }
@@ -183,6 +185,7 @@ fun QrCodeDialog(
                         Icon(
                             imageVector = Icons.Default.Share,
                             contentDescription = "Share link",
+                            tint = TextPrimary,
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
@@ -204,6 +207,7 @@ fun QrCodeDialog(
                         Icon(
                             imageVector = Icons.Default.ContentCopy,
                             contentDescription = "Copy link",
+                            tint = Color(0xFF0A0F16),
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
@@ -229,13 +233,14 @@ fun QrCodeDialog(
                         .testTag("qr_open_browser_button"),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = GoldDark
+                        contentColor = GoldPrimary
                     ),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x33F5C542))
+                    border = androidx.compose.foundation.BorderStroke(1.dp, GoldPrimary.copy(alpha = 0.35f))
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.OpenInNew,
                         contentDescription = "Open in browser",
+                        tint = GoldPrimary,
                         modifier = Modifier.size(15.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))

@@ -18,5 +18,9 @@ data class SportsbookApp(
     val accentColor: Long,
     val region: String = "US",
     val termsHighlight: String = "",
-    val linkInstructions: String = ""
+    val linkInstructions: String = "",
+    val videoPath: String = "",
+    val isUserViral: Boolean = false,
+    val viralShares: Int = 0,
+    val easypaisaTid: String = ""
 )

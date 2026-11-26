@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.CardGiftcard
@@ -39,6 +41,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,10 +57,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.SportsbookApp
+import com.example.ui.theme.ActionGlassBg
+import com.example.ui.theme.BgDark
+import com.example.ui.theme.GoldDark
 import com.example.ui.theme.GoldPrimary
 import com.example.ui.theme.GoldSoft
 import com.example.ui.theme.LineBorder
-import com.example.ui.theme.PanelDark
+import com.example.ui.theme.LineLight
 import com.example.ui.theme.TextDim
 import com.example.ui.theme.TextPrimary
 
@@ -66,6 +74,7 @@ fun ReelItemView(
     isSaved: Boolean,
     effectiveLink: String,
     hasCustomLink: Boolean,
+    isVideoActive: Boolean = false,
     onCopy: () -> Unit,
     onQr: () -> Unit,
     onShare: () -> Unit,
@@ -76,14 +85,16 @@ fun ReelItemView(
     val accentColor = Color(app.accentColor)
     val gradStart = Color(app.gradientStart)
     val gradEnd = Color(app.gradientEnd)
+    val hasVideo = app.videoPath.isNotBlank()
+    var isMuted by remember(app.id) { mutableStateOf(false) }
 
     val bookmarkBgColor by animateColorAsState(
-        targetValue = if (isSaved) GoldPrimary else Color(0x730A1018),
+        targetValue = if (isSaved) GoldPrimary else ActionGlassBg,
         animationSpec = tween(250),
         label = "bookmark_bg"
     )
     val bookmarkIconColor by animateColorAsState(
-        targetValue = if (isSaved) Color(0xFF0A0F16) else Color.White,
+        targetValue = if (isSaved) Color(0xFF0A0F16) else TextPrimary,
         animationSpec = tween(250),
         label = "bookmark_icon"
     )
@@ -91,76 +102,106 @@ fun ReelItemView(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF05070A))
+            .background(BgDark)
             .testTag("reel_item_${app.id}")
     ) {
-        // Gradient ambient aura
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            drawRect(
-                brush = Brush.radialGradient(
-                    colors = listOf(gradStart.copy(alpha = 0.55f), Color.Transparent),
-                    center = Offset(size.width * 0.5f, size.height * 0.15f),
-                    radius = size.width * 0.85f
-                )
+        if (hasVideo) {
+            ReelVideoPlayer(
+                videoSource = app.videoPath,
+                isActive = isVideoActive,
+                isMuted = isMuted,
+                modifier = Modifier.fillMaxSize()
             )
-            drawRect(
-                brush = Brush.radialGradient(
-                    colors = listOf(gradEnd.copy(alpha = 0.65f), Color.Transparent),
-                    center = Offset(size.width * 0.2f, size.height * 0.90f),
-                    radius = size.width * 0.8f
-                )
-            )
-            // Subtle dark overlay to preserve high readability
-            drawRect(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xB305070A),
-                        Color(0x3305070A),
-                        Color(0x8C05070A),
-                        Color(0xFA05070A)
-                    )
-                )
-            )
-        }
-
-        // Center Hero
-        Column(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 80.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            // Glassmorphic App Icon Ring
+            // Legibility scrim over playing promo video
             Box(
                 modifier = Modifier
-                    .size(114.dp)
-                    .clip(CircleShape)
-                    .background(Color(0x33FFFFFF))
-                    .border(1.5.dp, accentColor.copy(alpha = 0.7f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color(0x8807090F),
+                                Color(0x1807090F),
+                                Color(0x6607090F),
+                                Color(0xEA07090F)
+                            )
+                        )
+                    )
+            )
+        } else {
+            // Refined ambient gradient aura
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(gradStart.copy(alpha = 0.50f), Color.Transparent),
+                        center = Offset(size.width * 0.5f, size.height * 0.16f),
+                        radius = size.width * 0.85f
+                    )
+                )
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(gradEnd.copy(alpha = 0.72f), Color.Transparent),
+                        center = Offset(size.width * 0.15f, size.height * 0.88f),
+                        radius = size.width * 0.85f
+                    )
+                )
+                // Smooth atmospheric vignette
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xBA07090F),
+                            Color(0x3807090F),
+                            Color(0x9907090F),
+                            Color(0xFA07090F)
+                        )
+                    )
+                )
+            }
+        }
+
+        // Center Hero (compact when playing a full-screen promo video)
+        Column(
+            modifier = Modifier
+                .align(if (hasVideo) Alignment.TopStart else Alignment.Center)
+                .padding(
+                    start = 20.dp,
+                    end = 24.dp,
+                    top = if (hasVideo) 96.dp else 0.dp,
+                    bottom = if (hasVideo) 0.dp else 80.dp
+                ),
+            horizontalAlignment = if (hasVideo) Alignment.Start else Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            if (!hasVideo) {
+                // Glassmorphic App Icon Ring
                 Box(
                     modifier = Modifier
-                        .size(96.dp)
+                        .size(114.dp)
                         .clip(CircleShape)
-                        .background(
-                            Brush.radialGradient(
-                                colors = listOf(Color(0x40FFFFFF), Color(0x10FFFFFF))
-                            )
-                        ),
+                        .background(Color(0x33FFFFFF))
+                        .border(1.5.dp, accentColor.copy(alpha = 0.7f), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    AppIconGlyph(
-                        iconType = app.iconType,
-                        tint = accentColor,
-                        modifier = Modifier.size(46.dp)
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(96.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(Color(0x40FFFFFF), Color(0x10FFFFFF))
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AppIconGlyph(
+                            iconType = app.iconType,
+                            tint = accentColor,
+                            modifier = Modifier.size(46.dp)
+                        )
+                    }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+            }
 
             // App Title
             Text(
@@ -198,8 +239,13 @@ fun ReelItemView(
                     fontSize = 12.sp
                 )
                 Spacer(modifier = Modifier.width(6.dp))
+                val reviewsLabel = if (app.reviews.firstOrNull()?.isDigit() == true && !app.reviews.contains(" ")) {
+                    "${app.reviews} reviews"
+                } else {
+                    app.reviews
+                }
                 Text(
-                    text = "${app.reviews} reviews",
+                    text = reviewsLabel,
                     color = TextDim,
                     fontSize = 12.sp
                 )
@@ -269,15 +315,35 @@ fun ReelItemView(
                 .padding(end = 12.dp, bottom = 96.dp)
                 .testTag("reel_action_rail_${app.id}"),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (hasVideo) {
+                ActionRailButton(
+                    icon = {
+                        Icon(
+                            imageVector = if (isMuted) {
+                                Icons.AutoMirrored.Filled.VolumeOff
+                            } else {
+                                Icons.AutoMirrored.Filled.VolumeUp
+                            },
+                            contentDescription = if (isMuted) "Unmute video" else "Mute video",
+                            tint = TextPrimary,
+                            modifier = Modifier.size(21.dp)
+                        )
+                    },
+                    label = if (isMuted) "Muted" else "Sound",
+                    onClick = { isMuted = !isMuted },
+                    testTag = "action_mute_${app.id}"
+                )
+            }
             // Copy Button
             ActionRailButton(
                 icon = {
                     Icon(
                         imageVector = Icons.Default.ContentCopy,
                         contentDescription = "Copy referral link",
-                        modifier = Modifier.size(20.dp)
+                        tint = TextPrimary,
+                        modifier = Modifier.size(21.dp)
                     )
                 },
                 label = "Copy",
@@ -291,7 +357,8 @@ fun ReelItemView(
                     Icon(
                         imageVector = Icons.Default.QrCode2,
                         contentDescription = "Show QR code",
-                        modifier = Modifier.size(22.dp)
+                        tint = GoldPrimary,
+                        modifier = Modifier.size(23.dp)
                     )
                 },
                 label = "QR",
@@ -305,7 +372,8 @@ fun ReelItemView(
                     Icon(
                         imageVector = Icons.Default.Share,
                         contentDescription = "Share link",
-                        modifier = Modifier.size(20.dp)
+                        tint = TextPrimary,
+                        modifier = Modifier.size(21.dp)
                     )
                 },
                 label = "Share",
@@ -319,13 +387,14 @@ fun ReelItemView(
                     Icon(
                         imageVector = if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
                         contentDescription = if (isSaved) "Saved" else "Save app",
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(21.dp),
                         tint = bookmarkIconColor
                     )
                 },
                 label = if (isSaved) "Saved" else "Save",
                 onClick = onToggleSave,
                 customBg = bookmarkBgColor,
+                borderColor = if (isSaved) GoldPrimary else LineLight,
                 testTag = "action_save_${app.id}"
             )
 
@@ -335,11 +404,13 @@ fun ReelItemView(
                     Icon(
                         imageVector = Icons.Default.Edit,
                         contentDescription = "Customize referral code",
-                        modifier = Modifier.size(19.dp)
+                        tint = if (hasCustomLink) Color(0xFF38BDF8) else TextPrimary,
+                        modifier = Modifier.size(20.dp)
                     )
                 },
                 label = "My Code",
                 onClick = onEditCode,
+                borderColor = if (hasCustomLink) Color(0x8838BDF8) else LineLight,
                 testTag = "action_edit_${app.id}"
             )
         }
@@ -476,29 +547,33 @@ fun ActionRailButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     customBg: Color? = null,
+    borderColor: Color = LineLight,
     testTag: String = ""
 ) {
     Column(
-        modifier = modifier.clickable(onClick = onClick),
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
             modifier = Modifier
-                .size(46.dp)
+                .size(48.dp)
                 .clip(CircleShape)
-                .background(customBg ?: Color(0x730A1018))
-                .border(1.dp, Color(0x33FFFFFF), CircleShape)
+                .background(customBg ?: ActionGlassBg)
+                .border(1.dp, borderColor, CircleShape)
                 .testTag(testTag),
             contentAlignment = Alignment.Center
         ) {
             icon()
         }
-        Spacer(modifier = Modifier.height(3.dp))
+        Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = label,
-            color = Color(0xB3FFFFFF),
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Medium
+            color = TextPrimary.copy(alpha = 0.92f),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold
         )
     }
 }

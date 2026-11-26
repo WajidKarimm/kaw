@@ -60,11 +60,12 @@ fun SearchSheet(
     selectedTag: String,
     onTagSelect: (String) -> Unit,
     results: List<SportsbookApp>,
+    getEffectiveLink: (SportsbookApp) -> String,
     onSelectApp: (SportsbookApp) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val trendingTags = listOf("All", "High Payout", "DraftKings", "Crypto", "Casino", "US", "Global")
+    val trendingTags = listOf("All", "Viral", "J10 App", "Win786", "4PK365", "Bonus", "Referral", "Global")
 
     Column(
         modifier = modifier
@@ -222,7 +223,7 @@ fun SearchSheet(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Try searching by name like 'DraftKings' or payout like '$100'",
+                        text = "Try searching by name like 'J10 App', 'Win786', or '4PK365'",
                         color = TextMuted,
                         fontSize = 12.sp
                     )
@@ -276,7 +277,7 @@ fun SearchSheet(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = app.defaultRef,
+                                text = getEffectiveLink(app),
                                 color = TextMuted,
                                 fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace,
