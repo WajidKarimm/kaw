@@ -55,6 +55,8 @@ import com.example.ui.theme.TextPrimary
 @Composable
 fun RefReelsTopBar(
     onSearchClick: () -> Unit,
+    currentIndex: Int = 0,
+    totalCount: Int = 0,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -87,43 +89,75 @@ fun RefReelsTopBar(
                 )
             }
             Spacer(modifier = Modifier.width(9.dp))
-            Row {
-                Text(
-                    text = "REF",
-                    color = TextPrimary,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = 0.5.sp
-                )
-                Text(
-                    text = "REELS",
-                    color = GoldPrimary,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = 0.5.sp
-                )
+            Column {
+                Row {
+                    Text(
+                        text = "REF",
+                        color = TextPrimary,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 0.5.sp
+                    )
+                    Text(
+                        text = "REELS",
+                        color = GoldPrimary,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 0.5.sp
+                    )
+                }
+                if (totalCount > 0) {
+                    Text(
+                        text = "$totalCount bonuses live",
+                        color = TextDim,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
         }
 
-        // Search icon button
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(Color(0x8C0A1018))
-                .border(1.dp, LineLight, CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            IconButton(
-                onClick = onSearchClick,
-                modifier = Modifier.testTag("top_search_button")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // Position pill, e.g. "4 / 12"
+            if (totalCount > 0) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(100.dp))
+                        .background(Color(0x8C0A1018))
+                        .border(1.dp, LineLight, RoundedCornerShape(100.dp))
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                        .testTag("top_position_pill")
+                ) {
+                    Text(
+                        text = "${currentIndex + 1} / $totalCount",
+                        color = TextDim,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+
+            // Search icon button
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(Color(0x8C0A1018))
+                    .border(1.dp, LineLight, CircleShape),
+                contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = "Search",
-                    tint = TextPrimary,
-                    modifier = Modifier.size(19.dp)
-                )
+                IconButton(
+                    onClick = onSearchClick,
+                    modifier = Modifier.testTag("top_search_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = TextPrimary,
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
             }
         }
     }

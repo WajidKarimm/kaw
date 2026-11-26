@@ -135,30 +135,53 @@ fun RefReelsApp(viewModel: RefReelsViewModel) {
             .background(Color(0xFF05070A))
             .testTag("refreels_main_screen")
     ) {
-        // Full screen Vertical Reel Pager
-        VerticalPager(
-            state = pagerState,
-            modifier = Modifier
-                .fillMaxSize()
-                .testTag("reels_vertical_pager"),
-            key = { allApps[it].id }
-        ) { page ->
-            val app = allApps[page]
-            val isSaved = savedIds.contains(app.id)
-            val effectiveLink = viewModel.getEffectiveLink(app)
-            val hasCustom = customLinks.containsKey(app.id)
+        if (allApps.isEmpty()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag("empty_feed_state"),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = "No referral offers yet",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Add rows to assets/referral_links.csv and rebuild.",
+                    color = Color(0x99FFFFFF),
+                    fontSize = 13.sp
+                )
+            }
+        } else {
+            // Full screen Vertical Reel Pager
+            VerticalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag("reels_vertical_pager"),
+                key = { allApps[it].id }
+            ) { page ->
+                val app = allApps[page]
+                val isSaved = savedIds.contains(app.id)
+                val effectiveLink = viewModel.getEffectiveLink(app)
+                val hasCustom = customLinks.containsKey(app.id)
 
-            ReelItemView(
-                app = app,
-                isSaved = isSaved,
-                effectiveLink = effectiveLink,
-                hasCustomLink = hasCustom,
-                onCopy = { viewModel.copyLink(app) },
-                onQr = { viewModel.openQrDialog(app) },
-                onShare = { viewModel.shareLink(app) },
-                onToggleSave = { viewModel.toggleSave(app) },
-                onEditCode = { viewModel.openEditDialog(app) }
-            )
+                ReelItemView(
+                    app = app,
+                    isSaved = isSaved,
+                    effectiveLink = effectiveLink,
+                    hasCustomLink = hasCustom,
+                    onCopy = { viewModel.copyLink(app) },
+                    onQr = { viewModel.openQrDialog(app) },
+                    onShare = { viewModel.shareLink(app) },
+                    onToggleSave = { viewModel.toggleSave(app) },
+                    onEditCode = { viewModel.openEditDialog(app) }
+                )
+            }
         }
 
         // Swipe up indicator for initial reel
@@ -204,6 +227,8 @@ fun RefReelsApp(viewModel: RefReelsViewModel) {
         // Top Brand Header Bar
         RefReelsTopBar(
             onSearchClick = { viewModel.openSheet(SheetType.SEARCH) },
+            currentIndex = pagerState.currentPage,
+            totalCount = allApps.size,
             modifier = Modifier.align(Alignment.TopCenter)
         )
 
@@ -217,8 +242,8 @@ fun RefReelsApp(viewModel: RefReelsViewModel) {
                     "search" -> viewModel.openSheet(SheetType.SEARCH)
                     "saved" -> viewModel.openSheet(SheetType.SAVED)
                     "qr" -> {
-                        val currentApp = allApps.getOrNull(pagerState.currentPage) ?: allApps[0]
-                        viewModel.openQrDialog(currentApp)
+                        val currentApp = allApps.getOrNull(pagerState.currentPage) ?: allApps.firstOrNull()
+                        currentApp?.let { viewModel.openQrDialog(it) }
                     }
                 }
             },

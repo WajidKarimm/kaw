@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-class SportsbookRepository(context: Context) {
+class SportsbookRepository(private val context: Context) {
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences("refreels_prefs", Context.MODE_PRIVATE)
@@ -80,7 +80,13 @@ class SportsbookRepository(context: Context) {
         return app.defaultRef
     }
 
-    fun getInitialApps(): List<SportsbookApp> = listOf(
+    fun getInitialApps(): List<SportsbookApp> {
+        val fromCsv = ReferralCsvLoader.load(context)
+        if (fromCsv.isNotEmpty()) return fromCsv
+        return getFallbackApps()
+    }
+
+    private fun getFallbackApps(): List<SportsbookApp> = listOf(
         SportsbookApp(
             id = "pointsbet",
             name = "PointsBet",
